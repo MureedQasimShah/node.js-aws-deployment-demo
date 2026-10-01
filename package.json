@@ -1,0 +1,12 @@
+{
+  "name": "nodejs-aws-deployment-demo",
+  "version": "1.0.0",
+  "description": "A simple Node.js dashboard that demonstrates deploying an app on AWS EC2 with Docker, Nginx, and HTTPS.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
