@@ -10,35 +10,19 @@ The application is an Express server and a single static page. It reports whethe
 
 ## Architecture
 
-Locally, Docker Compose publishes the app only on the host loopback interface:
+Docker Compose publishes port 3000 on every host interface (`0.0.0.0`):
 
 ```text
 Browser or curl
         |
-http://127.0.0.1:3000
+http://<host>:3000
         |
 Docker container (nodejs-app)
         |
 Node.js on 0.0.0.0:3000
 ```
 
-On the EC2 instance, Nginx will be the only public entry point. The container stays on localhost:
-
-```text
-Internet
-   |
-HTTPS :443
-   |
-Nginx on EC2
-   |
-127.0.0.1:3000
-   |
-Docker container
-   |
-Node.js application
-```
-
-Port 3000 is bound to `127.0.0.1` in Docker Compose on purpose. The Node.js process must not be reachable directly from the internet.
+`0.0.0.0:3000:3000` means the host accepts connections on port 3000 from localhost and from other machines that can reach the host. On EC2, open port 3000 in the security group if you want to reach the app directly. Nginx can still proxy to `127.0.0.1:3000` later, because that address is included when the port is published on all interfaces.
 
 ## Local prerequisites
 
@@ -146,11 +130,10 @@ This repository does not deploy anything. A typical follow-up on a fresh EC2 ins
 2. Clone this repository onto the instance.
 3. Start the app with `docker compose up -d --build`.
 4. Confirm `curl http://127.0.0.1:3000/api/health` works on the instance.
-5. Install Nginx and proxy public traffic to `127.0.0.1:3000`.
-6. Add HTTPS with a certificate (for example Let's Encrypt).
-7. Forward the EC2 hostname with the `X-EC2-Hostname` header.
-
-Leave the security group open for SSH and HTTPS (port 443). Do not open port 3000 to the internet.
+5. Open port 3000 in the security group when the app should be reachable from outside the instance.
+6. Install Nginx and proxy public traffic to `127.0.0.1:3000` if you add HTTPS later.
+7. Add HTTPS with a certificate (for example Let's Encrypt).
+8. Forward the EC2 hostname with the `X-EC2-Hostname` header.
 
 ## Future architecture with Nginx and HTTPS
 
@@ -168,4 +151,4 @@ Docker container (nodejs-app)
 Node.js application
 ```
 
-Nginx terminates HTTPS and reverse-proxies to the container. The Node.js app keeps serving plain HTTP on port 3000 inside the host, and only on localhost.
+Nginx can terminate HTTPS and reverse-proxy to the container. The Node.js app still serves plain HTTP on port 3000. Because Compose publishes `0.0.0.0:3000`, that same port is also reachable on the instance's other network interfaces.
