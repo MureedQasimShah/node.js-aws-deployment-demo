@@ -1,141 +1,6 @@
 # Node.js AWS Deployment Demo
 
-A small Node.js dashboard used to demonstrate this deployment path:
-
-```text
-Node.js → Docker → AWS EC2 → Nginx → HTTPS
-```
-
-The application is an Express server and a single static page. It reports whether the app is online, plus the hostname and process uptime. Nothing in this repository creates AWS resources.
-
 ## Architecture
-
-Docker Compose publishes port 3000 on every host interface (`0.0.0.0`):
-
-```text
-Browser or curl
-        |
-http://<host>:3000
-        |
-Docker container (nodejs-app)
-        |
-Node.js on 0.0.0.0:3000
-```
-
-`0.0.0.0:3000:3000` means the host accepts connections on port 3000 from localhost and from other machines that can reach the host. On EC2, open port 3000 in the security group if you want to reach the app directly. Nginx can still proxy to `127.0.0.1:3000` later, because that address is included when the port is published on all interfaces.
-
-## Local prerequisites
-
-- Node.js 18 or newer (Node.js 22 matches the Docker image)
-- npm
-- Docker Engine with the Docker Compose plugin
-
-Check the tools:
-
-```bash
-node -v
-npm -v
-docker compose version
-```
-
-## Run locally without Docker
-
-From the project directory:
-
-```bash
-npm install
-npm start
-```
-
-The server listens on `0.0.0.0:3000`. Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
-
-Stop the server with `Ctrl+C`.
-
-## Build and run with Docker Compose
-
-```bash
-docker compose up -d --build
-```
-
-Check that the container is running:
-
-```bash
-docker compose ps
-```
-
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
-
-Stop and remove the container:
-
-```bash
-docker compose down
-```
-
-## Test the health endpoint
-
-```bash
-curl http://127.0.0.1:3000/api/health
-```
-
-A healthy response looks like this:
-
-```json
-{
-  "status": "ok",
-  "message": "Node.js application is running",
-  "environment": "AWS EC2",
-  "hostname": "your-hostname",
-  "nodeVersion": "v22.x.x",
-  "uptimeSeconds": 12,
-  "timestamp": "2026-01-01T00:00:00.000Z"
-}
-```
-
-Runtime details are also available at:
-
-```bash
-curl http://127.0.0.1:3000/api/info
-```
-
-The dashboard calls `/api/health` about once per second and updates the hostname and uptime without reloading the page. If the API cannot be reached, the page shows **APPLICATION OFFLINE**.
-
-## How the hostname works
-
-The hostname is chosen per request:
-
-1. If the request includes an `X-EC2-Hostname` header, that value is used.
-2. Otherwise the server uses `os.hostname()`.
-
-Uptime always comes from `process.uptime()`.
-
-Try the header locally:
-
-```bash
-curl -H "X-EC2-Hostname: ip-10-0-1-25" http://127.0.0.1:3000/api/health
-```
-
-On EC2, Nginx can pass the real instance hostname into the container:
-
-```nginx
-proxy_set_header X-EC2-Hostname $hostname;
-```
-
-Inside Docker, `os.hostname()` is the container ID. The header lets the dashboard show the EC2 hostname instead.
-
-## Deploying later on AWS EC2
-
-This repository does not deploy anything. A typical follow-up on a fresh EC2 instance is:
-
-1. Install Docker and the Docker Compose plugin.
-2. Clone this repository onto the instance.
-3. Start the app with `docker compose up -d --build`.
-4. Confirm `curl http://127.0.0.1:3000/api/health` works on the instance.
-5. Open port 3000 in the security group when the app should be reachable from outside the instance.
-6. Install Nginx and proxy public traffic to `127.0.0.1:3000` if you add HTTPS later.
-7. Add HTTPS with a certificate (for example Let's Encrypt).
-8. Forward the EC2 hostname with the `X-EC2-Hostname` header.
-
-## Future architecture with Nginx and HTTPS
 
 ```text
 Internet
@@ -146,9 +11,189 @@ Nginx on EC2
    |
 127.0.0.1:3000
    |
-Docker container (nodejs-app)
+Docker container
    |
 Node.js application
 ```
 
-Nginx can terminate HTTPS and reverse-proxy to the container. The Node.js app still serves plain HTTP on port 3000. Because Compose publishes `0.0.0.0:3000`, that same port is also reachable on the instance's other network interfaces.
+## Docker installation
+
+Add Docker's official GPG key:
+
+```bash
+sudo apt update
+sudo apt install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+```
+
+Add the repository to Apt sources:
+
+```bash
+sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+```
+
+```bash
+sudo apt update
+sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+After installation, verify that Docker is running:
+
+```bash
+sudo systemctl status docker
+```
+
+If Docker is not running, start it manually:
+
+```bash
+sudo systemctl start docker
+```
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+## Clone and Docker deployment
+
+```bash
+git clone https://github.com/MureedQasimShah/node.js-aws-deployment-demo.git
+cd node.js-aws-deployment-demo
+docker compose up -d --build
+docker compose ps
+```
+
+## Nginx configuration
+
+1. Install Nginx
+
+```bash
+sudo apt update
+sudo apt install -y nginx
+```
+
+Start and enable it:
+
+```bash
+sudo systemctl enable --now nginx
+```
+
+Check:
+
+```bash
+sudo systemctl status nginx
+```
+
+2. Remove the default Nginx site
+
+```bash
+sudo rm -f /etc/nginx/sites-enabled/default
+```
+
+3. Create your Nginx configuration
+
+```bash
+sudo nano /etc/nginx/sites-available/nodeapp
+```
+
+Paste this:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+
+    server_name nodejs-qasim.duckdns.org;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header X-EC2-Hostname $hostname;
+    }
+}
+```
+
+Save:
+
+```text
+Ctrl + O
+Enter
+Ctrl + X
+```
+
+4. Enable the configuration
+
+```bash
+sudo ln -s /etc/nginx/sites-available/nodeapp /etc/nginx/sites-enabled/nodeapp
+```
+
+5. Test Nginx configuration
+
+```bash
+sudo nginx -t
+```
+
+You want:
+
+```text
+syntax is ok
+test is successful
+```
+
+6. Reload Nginx
+
+```bash
+sudo systemctl reload nginx
+```
+
+## DuckDNS
+
+1. Go to [https://www.duckdns.org](https://www.duckdns.org).
+2. Sign in.
+3. In the domain box, type `nodejs-qasim`.
+4. Click **add domain**.
+5. Set the current IP to the EC2 public IPv4 address.
+6. Click **update ip**.
+
+The name is `nodejs-qasim.duckdns.org`.
+
+## HTTPS / Certbot
+
+```bash
+sudo apt update
+sudo apt install certbot python3-certbot-nginx -y
+```
+
+Request the certificate and configure Nginx:
+
+```bash
+sudo certbot --nginx -d nodejs-qasim.duckdns.org
+```
+
+Certbot will ask you for:
+
+- Email address. Enter your email.
+- Accept the Terms of Service.
+- If asked whether to redirect HTTP to HTTPS, choose **2: Redirect**.
+
+This will make `http://nodejs-qasim.duckdns.org` redirect to `https://nodejs-qasim.duckdns.org`.
+
+```bash
+sudo systemctl reload nginx
+```

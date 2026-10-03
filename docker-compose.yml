@@ -4,4 +4,4 @@ services:
     container_name: nodejs-app
     restart: unless-stopped
     ports:
-      - "0.0.0.0:3000:3000"
+      - "127.0.0.1:3000:3000"
