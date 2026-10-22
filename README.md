@@ -1,5 +1,7 @@
 # Node.js AWS Deployment Demo
 
+Full tutorial, step by step: https://youtu.be/ogYQbBStYrc?si=wue6Jf-nRQrQaVMi
+
 ## Architecture
 
 ```text
